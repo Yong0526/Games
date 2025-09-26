@@ -5,254 +5,183 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>模拟打怪小游戏</title>
 <style>
-body {
-  margin:0;
-  font-family:'Comic Sans MS', Arial, sans-serif;
-  text-align:center;
-  background: linear-gradient(to bottom, #000033, #000066);
-  overflow:hidden;
-  color:#fff;
-}
+body { margin:0; font-family:'Comic Sans MS', Arial, sans-serif; text-align:center; background:#000033; overflow:hidden; color:#fff; }
 canvas { display:block; margin:0 auto; background:#002200; }
-#controls {
-  position:absolute;
-  bottom:20px;
-  width:100%;
-  display:flex;
-  justify-content:space-around;
-}
-.button {
-  width:60px; height:60px;
-  background:#33ccff;
-  border-radius:50%;
-  font-size:24px;
-  line-height:60px;
-  text-align:center;
-  user-select:none;
-  transition:0.1s;
-}
-.button:active {
-  background:#66ffcc;
-  transform:scale(0.9);
-}
-#status {
-  position:absolute;
-  top:10px;
-  left:50%;
-  transform:translateX(-50%);
-  font-size:18px;
-  color:#ffcc66;
-  text-shadow:1px 1px #000;
-}
+#controls { position:absolute; bottom:20px; width:100%; display:flex; justify-content:space-around; }
+.button { width:60px; height:60px; background:#33ccff; border-radius:50%; font-size:24px; line-height:60px; text-align:center; user-select:none; transition:0.1s; }
+.button:active { background:#66ffcc; transform:scale(0.9); }
+#status { position:absolute; top:10px; left:50%; transform:translateX(-50%); font-size:18px; color:#ffcc66; text-shadow:1px 1px #000; }
+#startScreen { position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); color:#fff; display:flex; flex-direction:column; justify-content:center; align-items:center; font-size:18px; z-index:10; }
+#startScreen button { margin-top:20px; padding:10px 20px; font-size:20px; border:none; border-radius:10px; background:#33ccff; color:#000; }
+#startScreen button:active { background:#66ffcc; }
 </style>
 </head>
 <body>
-
+<div id="startScreen">
+  <div>欢迎来到模拟打怪小游戏！</div>
+  <div>操作说明：</div>
+  <div>◀ ▶ ：移动玩家</div>
+  <div>⚔ 或 空格 ：攻击怪物</div>
+  <div>目标分数: 10 分</div>
+  <button id="startBtn">开始游戏</button>
+</div>
 <div id="status">生命:5 &nbsp; 分数:0 &nbsp; 连击:0</div>
 <canvas id="gameCanvas"></canvas>
-
 <div id="controls">
   <div class="button" id="leftBtn">◀</div>
   <div class="button" id="rightBtn">▶</div>
   <div class="button" id="attackBtn">⚔</div>
 </div>
-
-<!-- 音效 -->
 <audio id="hitSound" src="https://www.soundjay.com/mechanical/sounds/sword-clash-1.mp3" preload="auto"></audio>
-
 <script>
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
-
-// 自适应画布
-function resizeCanvas(){
-  canvas.width = Math.min(window.innerWidth, 360);
-  canvas.height = Math.min(window.innerHeight, 600);
-}
+const canvas=document.getElementById('gameCanvas');
+const ctx=canvas.getContext('2d');
+const startScreen=document.getElementById('startScreen');
+const startBtn=document.getElementById('startBtn');
+function resizeCanvas(){ canvas.width=Math.min(window.innerWidth,360); canvas.height=Math.min(window.innerHeight,600);}
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
-let width = canvas.width, height = canvas.height;
+let width=canvas.width,height=canvas.height;
 
 // 玩家
-const player = { x: width/2-25, y: height-100, width:50, height:80, color:'#ff6666', speed:5, attacking:false };
-
-// 控制
-let moveLeft=false, moveRight=false, attacking=false;
+const player={x:width/2-25,y:height-100,width:50,height:80,attacking:false};
+let playerVelocity=0,acceleration=0.5,maxSpeed=5;
+let moveLeft=false,moveRight=false,attacking=false;
 
 // 怪物
-let monsters=[], monsterTimer=0;
+let monsters=[],monsterTimer=0,monsterSpeed=1.5,monsterInterval=100;
 
-// 剑光特效 & 连击
-let swordEffects=[];
-let combo=0, comboTimer=0;
+// 剑光 & 连击
+let swordEffects=[],combo=0,comboTimer=0;
+
+// 粒子
+let drops=[];
 
 // 状态
-let lives=5, score=0, gameOver=false;
+let lives=5,score=0,gameOver=false,victory=false;
 
-// 音效对象
-const hitSound = document.getElementById('hitSound');
+// 进度条
+let progress=0,maxProgress=600;
+
+// 音效
+const hitSound=document.getElementById('hitSound');
+
+// 画面震动偏移
+let shakeOffset={x:0,y:0};
+function applyShake(){ ctx.setTransform(1,0,0,1,shakeOffset.x,shakeOffset.y);}
+function triggerShake(intensity=5){ shakeOffset.x=(Math.random()-0.5)*intensity; shakeOffset.y=(Math.random()-0.5)*intensity; setTimeout(()=>{shakeOffset.x=0;shakeOffset.y=0;},50);}
 
 // 随机生成怪物
-function spawnMonster(){
-  const size = Math.random()*30 + 30;
-  const x = Math.random()*(width-size);
-  const color = `rgb(${Math.random()*255|0},${Math.random()*255|0},${Math.random()*255|0})`;
-  monsters.push({x, y:-size, width:size, height:size, color, hp:1});
-}
+function spawnMonster(){ const size=40; const x=Math.random()*(width-size); monsters.push({x,y:-size,width:size,height:size,hp:1});}
+
+// 生成掉落物
+function spawnDrops(x,y){ for(let i=0;i<3+Math.floor(Math.random()*3);i++){ drops.push({x:x+Math.random()*30-15,y:y,radius:3+Math.random()*3,color:`rgb(255,${200+Math.random()*55|0},0)`,vy:1+Math.random()*2,alpha:1}); }}
 
 // 碰撞检测
-function checkCollision(a,b){
-  return !(a.x+a.width<b.x || a.x>b.x+b.width || a.y+a.height<b.y || a.y>b.y+b.height);
-}
+function checkCollision(a,b){ return !(a.x+a.width<b.x || a.x>b.x+b.width || a.y+a.height<b.y || a.y>b.y+b.height);}
 
-// 绘制玩家
-function drawPlayer(){
-  ctx.fillStyle = player.attacking ? '#ffaaaa' : player.color;
-  ctx.fillRect(player.x, player.y, player.width, player.height);
-}
+// 玩家小人
+function drawPlayer(){ ctx.save(); ctx.translate(player.x+player.width/2,player.y+player.height/2); ctx.fillStyle='#ff6666'; ctx.fillRect(-15,-20,30,40); ctx.beginPath(); ctx.arc(0,-30,12,0,Math.PI*2); ctx.fillStyle='#ffe0bd'; ctx.fill(); ctx.closePath(); ctx.strokeStyle='#ff6666'; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(-15,-10); ctx.lineTo(-25,10); ctx.stroke(); ctx.beginPath(); ctx.moveTo(15,-10); if(player.attacking) ctx.lineTo(35,-30); else ctx.lineTo(25,10); ctx.stroke(); ctx.fillStyle='#333'; ctx.fillRect(-10,20,10,20); ctx.fillRect(0,20,10,20); ctx.restore();}
 
-// 绘制怪物
-function drawMonsters(){
-  monsters.forEach(m=>{
-    ctx.fillStyle = m.color;
-    ctx.fillRect(m.x, m.y, m.width, m.height);
-  });
-}
+// 怪物小人
+function drawMonsters(){ monsters.forEach(m=>{ ctx.save(); ctx.translate(m.x+m.width/2,m.y+m.height/2); ctx.fillStyle='#66ff66'; ctx.fillRect(-15,-20,30,40); ctx.beginPath(); ctx.arc(0,-30,12,0,Math.PI*2); ctx.fillStyle='#ccffcc'; ctx.fill(); ctx.closePath(); ctx.strokeStyle='#66ff66'; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(-15,-10); ctx.lineTo(-25,10); ctx.stroke(); ctx.beginPath(); ctx.moveTo(15,-10); ctx.lineTo(25,10); ctx.stroke(); ctx.fillStyle='#333'; ctx.fillRect(-10,20,10,20); ctx.fillRect(0,20,10,20); ctx.restore(); });}
 
-// 绘制剑光
-function drawSwordEffects(){
-  swordEffects.forEach(e=>{
-    ctx.fillStyle = `rgba(255,255,255,${e.alpha})`;
-    ctx.fillRect(e.x, e.y, e.width, e.height);
-  });
-}
+// 剑光
+function drawSwordEffects(){ swordEffects.forEach(e=>{ ctx.fillStyle=`rgba(${255-combo*20},255,${255-combo*20},${e.alpha})`; ctx.fillRect(e.x,e.y,e.width,e.height); });}
+
+// 粒子
+function drawDrops(){ drops.forEach(d=>{ ctx.beginPath(); ctx.arc(d.x,d.y,d.radius,0,Math.PI*2); ctx.fillStyle=`rgba(${d.color.slice(4,-1)},${d.alpha})`; ctx.fill(); });}
+
+// 进度条
+function drawProgressBar(){ const barWidth=width*(progress/maxProgress); ctx.fillStyle='#00ff00'; ctx.fillRect(0,50,barWidth,10); ctx.strokeStyle='#fff'; ctx.strokeRect(0,50,width,10);}
 
 // 更新剑光
-function updateSwordEffects(){
-  for(let i=swordEffects.length-1;i>=0;i--){
-    swordEffects[i].alpha -= 0.1;
-    if(swordEffects[i].alpha <=0) swordEffects.splice(i,1);
-  }
-}
+function updateSwordEffects(){ for(let i=swordEffects.length-1;i>=0;i--){ swordEffects[i].alpha-=swordEffects[i].fadeSpeed; if(swordEffects[i].alpha<=0) swordEffects.splice(i,1); }}
+
+// 更新粒子
+function updateDrops(){ for(let i=drops.length-1;i>=0;i--){ let d=drops[i]; d.y+=d.vy; d.alpha-=0.02; if(d.alpha<=0||d.y>height) drops.splice(i,1); }}
 
 // 更新怪物
 function updateMonsters(){
-  let hit = false;
+  let hit=false;
   for(let i=monsters.length-1;i>=0;i--){
-    let m = monsters[i];
-    m.y += 2; // 降低怪物速度
-
-    if(checkCollision(player, m)){
-      lives--; 
-      monsters.splice(i,1);
-      combo=0; // 被撞重置连击
-      if(lives<=0) gameOver=true;
-      continue;
-    }
-    if(m.y>height){
-      monsters.splice(i,1);
-      continue;
-    }
-
-    // 玩家攻击判定
-    if(attacking && player.y < m.y + m.height && m.y < player.y + player.height){
-      if(Math.abs((player.x+player.width/2)-(m.x+m.width/2)) < 50){
-        score+=10 + combo*2; // 连击加分
-        monsters.splice(i,1);
-        hit=true;
-
-        // 剑光长度随连击增加
-        swordEffects.push({x:m.x-10, y:m.y-10, width:m.width+20+combo*5, height:10, alpha:1});
-
-        // 播放音效
-        hitSound.currentTime = 0;
-        hitSound.play();
+    let m=monsters[i];
+    m.y+=monsterSpeed;
+    if(checkCollision(player,m)){ lives--; monsters.splice(i,1); combo=0; triggerShake(8); if(lives<=0) gameOver=true; continue;}
+    if(m.y>height){ monsters.splice(i,1); continue;}
+    if(attacking && player.y<m.y+m.height && m.y<player.y+player.height){
+      if(Math.abs((player.x+player.width/2)-(m.x+m.width/2))<50){
+        score++; monsters.splice(i,1); hit=true; triggerShake(5);
+        swordEffects.push({x:m.x-10,y:m.y-10,width:m.width+20+combo*5,height:10,alpha:1,fadeSpeed:0.1+combo*0.02});
+        spawnDrops(m.x+m.width/2,m.y+m.height/2);
+        hitSound.currentTime=0; hitSound.play();
+        if(score>=10) victory=true;
       }
     }
   }
-
-  // 连击计数
-  if(hit){
-    combo++;
-    comboTimer = 60; // 连击保持1秒
-  }else{
-    if(comboTimer>0) comboTimer--;
-    else combo=0;
-  }
+  if(hit){ combo++; comboTimer=60;} else{ if(comboTimer>0) comboTimer--; else combo=0;}
 }
 
 // 更新玩家
 function updatePlayer(){
-  if(moveLeft) player.x -= player.speed;
-  if(moveRight) player.x += player.speed;
+  if(moveLeft) playerVelocity-=acceleration;
+  if(moveRight) playerVelocity+=acceleration;
+  playerVelocity*=0.9;
+  if(playerVelocity>maxSpeed) playerVelocity=maxSpeed;
+  if(playerVelocity<-maxSpeed) playerVelocity=-maxSpeed;
+  player.x+=playerVelocity;
   if(player.x<0) player.x=0;
   if(player.x+player.width>width) player.x=width-player.width;
 }
 
-// 更新状态显示
-function updateStatus(){ 
-  document.getElementById('status').innerHTML=`生命:${lives} &nbsp; 分数:${score} &nbsp; 连击:${combo}`; 
-}
+// 更新状态
+function updateStatus(){ document.getElementById('status').innerHTML=`生命:${lives} &nbsp; 分数:${score} &nbsp; 连击:${combo}`;}
 
 // 主循环
 function gameLoop(){
-  if(gameOver){
-    ctx.fillStyle='rgba(0,0,0,0.7)';
-    ctx.fillRect(0,0,width,height);
-    ctx.fillStyle='#ffcc66';
-    ctx.font='28px Comic Sans MS';
-    ctx.fillText('游戏结束', width/2-70, height/2);
+  if(gameOver||victory){
+    ctx.clearRect(0,0,width,height);
+    ctx.fillStyle='rgba(0,0,0,0.7)'; ctx.fillRect(0,0,width,height);
+    ctx.fillStyle='#ffcc66'; ctx.font='28px Comic Sans MS';
+    ctx.fillText(gameOver?'游戏结束':'胜利达成！', width/2-90, height/2);
     ctx.fillText(`最终分数:${score}`, width/2-80, height/2+40);
+    ctx.fillText('点击屏幕重新开始', width/2-110, height/2+80);
+    canvas.addEventListener('click', ()=>location.reload(), {once:true});
     return;
   }
 
   ctx.clearRect(0,0,width,height);
-
-  // 背景渐变
-  let grad = ctx.createLinearGradient(0,0,0,height);
-  grad.addColorStop(0,'#000033');
-  grad.addColorStop(1,'#000044');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0,0,width,height);
+  applyShake();
+  let grad=ctx.createLinearGradient(0,0,0,height);
+  grad.addColorStop(0,'#000033'); grad.addColorStop(1,'#000044');
+  ctx.fillStyle=grad; ctx.fillRect(0,0,width,height);
 
   drawPlayer();
-
-  monsterTimer++;
-  if(monsterTimer>80){ spawnMonster(); monsterTimer=0; } // 增加怪物生成间隔
-
-  updateMonsters();
-  drawMonsters();
-  updatePlayer();
-  updateSwordEffects();
-  drawSwordEffects();
+  monsterTimer++; if(monsterTimer>monsterInterval){ spawnMonster(); monsterTimer=0;}
+  updateMonsters(); drawMonsters();
+  updatePlayer(); updateSwordEffects(); drawSwordEffects();
+  updateDrops(); drawDrops();
+  progress++; if(progress>maxProgress) progress=maxProgress; drawProgressBar();
   updateStatus();
-
   requestAnimationFrame(gameLoop);
 }
 
 // 按钮控制
+['leftBtn','rightBtn','attackBtn'].forEach(id=>{ const btn=document.getElementById(id); btn.addEventListener('touchmove', e=>e.preventDefault()); });
 document.getElementById('leftBtn').addEventListener('touchstart',()=>moveLeft=true);
 document.getElementById('leftBtn').addEventListener('touchend',()=>moveLeft=false);
 document.getElementById('rightBtn').addEventListener('touchstart',()=>moveRight=true);
 document.getElementById('rightBtn').addEventListener('touchend',()=>moveRight=false);
-document.getElementById('attackBtn').addEventListener('touchstart',()=>{attacking=true; player.attacking=true});
-document.getElementById('attackBtn').addEventListener('touchend',()=>{attacking=false; player.attacking=false});
+document.getElementById('attackBtn').addEventListener('touchstart',()=>{attacking=true;player.attacking=true;});
+document.getElementById('attackBtn').addEventListener('touchend',()=>{attacking=false;player.attacking=false;});
 
 // 键盘控制
-document.addEventListener('keydown', e=>{
-  if(e.key==='ArrowLeft') moveLeft=true;
-  if(e.key==='ArrowRight') moveRight=true;
-  if(e.key===' ') { attacking=true; player.attacking=true; }
-});
-document.addEventListener('keyup', e=>{
-  if(e.key==='ArrowLeft') moveLeft=false;
-  if(e.key==='ArrowRight') moveRight=false;
-  if(e.key===' ') { attacking=false; player.attacking=false; }
-});
+document.addEventListener('keydown', e=>{ if(e.key==='ArrowLeft') moveLeft=true; if(e.key==='ArrowRight') moveRight=true; if(e.key===' ') {attacking=true;player.attacking=true;}});
+document.addEventListener('keyup', e=>{ if(e.key==='ArrowLeft') moveLeft=false; if(e.key==='ArrowRight') moveRight=false; if(e.key===' ') {attacking=false;player.attacking=false;}});
 
-gameLoop();
+// 开始按钮
+startBtn.addEventListener('click', ()=>{ startScreen.style.display='none'; gameLoop(); });
 </script>
 </body>
 </html>
-
 
