@@ -3,163 +3,256 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>第一关 - 爱情迷宫</title>
+<title>模拟打怪小游戏</title>
 <style>
-  body {
-    font-family: 'Arial', sans-serif;
-    text-align: center;
-    background: linear-gradient(to bottom, #e0f7ff, #b3ecff);
-    margin: 0;
-    padding: 20px;
-    overflow-x: hidden;
-  }
-  h1 { color: #0073b3; }
-  canvas {
-    border: 3px solid #0073b3;
-    background: #fff;
-    margin-top: 20px;
-    border-radius: 10px;
-  }
-  #message {
-    font-size: 20px;
-    color: #0073b3;
-    margin-top: 20px;
-    min-height: 28px;
-    transition: opacity 0.5s;
-  }
-  #next {
-    display: none;
-    margin-top: 20px;
-    padding: 12px 25px;
-    font-size: 18px;
-    border: none;
-    border-radius: 10px;
-    background: #0073b3;
-    color: white;
-    cursor: pointer;
-    transition: 0.3s;
-  }
-  #next:hover { background: #00aaff; }
+body {
+  margin:0;
+  font-family:'Comic Sans MS', Arial, sans-serif;
+  text-align:center;
+  background: linear-gradient(to bottom, #000033, #000066);
+  overflow:hidden;
+  color:#fff;
+}
+canvas { display:block; margin:0 auto; background:#002200; }
+#controls {
+  position:absolute;
+  bottom:20px;
+  width:100%;
+  display:flex;
+  justify-content:space-around;
+}
+.button {
+  width:60px; height:60px;
+  background:#33ccff;
+  border-radius:50%;
+  font-size:24px;
+  line-height:60px;
+  text-align:center;
+  user-select:none;
+  transition:0.1s;
+}
+.button:active {
+  background:#66ffcc;
+  transform:scale(0.9);
+}
+#status {
+  position:absolute;
+  top:10px;
+  left:50%;
+  transform:translateX(-50%);
+  font-size:18px;
+  color:#ffcc66;
+  text-shadow:1px 1px #000;
+}
 </style>
 </head>
 <body>
-  <h1>第一关 - 爱情迷宫</h1>
-  <p>小朱要走过迷宫去找到小杨 ❤️</p>
-  <canvas id="mazeCanvas" width="400" height="400"></canvas>
-  <div id="message"></div>
-  <button id="next" onclick="nextLevel()">进入第二关</button>
+
+<div id="status">生命:5 &nbsp; 分数:0 &nbsp; 连击:0</div>
+<canvas id="gameCanvas"></canvas>
+
+<div id="controls">
+  <div class="button" id="leftBtn">◀</div>
+  <div class="button" id="rightBtn">▶</div>
+  <div class="button" id="attackBtn">⚔</div>
+</div>
+
+<!-- 音效 -->
+<audio id="hitSound" src="https://www.soundjay.com/mechanical/sounds/sword-clash-1.mp3" preload="auto"></audio>
 
 <script>
-const canvas = document.getElementById("mazeCanvas");
-const ctx = canvas.getContext("2d");
-const cellSize = 40;
-const rows = 10, cols = 10;
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
 
-const maze = [
-  [0,1,0,0,0,0,1,0,0,0],
-  [0,1,0,1,1,0,1,0,1,0],
-  [0,0,0,1,0,0,0,0,1,0],
-  [1,1,0,1,0,1,1,0,1,0],
-  [0,0,0,0,0,1,0,0,0,0],
-  [0,1,1,1,0,1,0,1,1,0],
-  [0,0,0,1,0,0,0,1,0,0],
-  [1,1,0,1,1,1,0,1,0,1],
-  [0,0,0,0,0,0,0,0,0,0],
-  [0,1,1,1,1,1,1,1,1,0]
-];
+// 自适应画布
+function resizeCanvas(){
+  canvas.width = Math.min(window.innerWidth, 360);
+  canvas.height = Math.min(window.innerHeight, 600);
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+let width = canvas.width, height = canvas.height;
 
-let player = {x:0, y:0};
-const goal = {x:9, y:9};
-let pathTrail = []; // 玩家移动步迹
+// 玩家
+const player = { x: width/2-25, y: height-100, width:50, height:80, color:'#ff6666', speed:5, attacking:false };
 
-function drawMaze() {
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  
-  // 绘制迷宫墙
-  for (let y=0; y<rows; y++) {
-    for (let x=0; x<cols; x++) {
-      if (maze[y][x] === 1) {
-        ctx.fillStyle = "#0073b3";
-        ctx.fillRect(x*cellSize, y*cellSize, cellSize, cellSize);
+// 控制
+let moveLeft=false, moveRight=false, attacking=false;
+
+// 怪物
+let monsters=[], monsterTimer=0;
+
+// 剑光特效 & 连击
+let swordEffects=[];
+let combo=0, comboTimer=0;
+
+// 状态
+let lives=5, score=0, gameOver=false;
+
+// 音效对象
+const hitSound = document.getElementById('hitSound');
+
+// 随机生成怪物
+function spawnMonster(){
+  const size = Math.random()*30 + 30;
+  const x = Math.random()*(width-size);
+  const color = `rgb(${Math.random()*255|0},${Math.random()*255|0},${Math.random()*255|0})`;
+  monsters.push({x, y:-size, width:size, height:size, color, hp:1});
+}
+
+// 碰撞检测
+function checkCollision(a,b){
+  return !(a.x+a.width<b.x || a.x>b.x+b.width || a.y+a.height<b.y || a.y>b.y+b.height);
+}
+
+// 绘制玩家
+function drawPlayer(){
+  ctx.fillStyle = player.attacking ? '#ffaaaa' : player.color;
+  ctx.fillRect(player.x, player.y, player.width, player.height);
+}
+
+// 绘制怪物
+function drawMonsters(){
+  monsters.forEach(m=>{
+    ctx.fillStyle = m.color;
+    ctx.fillRect(m.x, m.y, m.width, m.height);
+  });
+}
+
+// 绘制剑光
+function drawSwordEffects(){
+  swordEffects.forEach(e=>{
+    ctx.fillStyle = `rgba(255,255,255,${e.alpha})`;
+    ctx.fillRect(e.x, e.y, e.width, e.height);
+  });
+}
+
+// 更新剑光
+function updateSwordEffects(){
+  for(let i=swordEffects.length-1;i>=0;i--){
+    swordEffects[i].alpha -= 0.1;
+    if(swordEffects[i].alpha <=0) swordEffects.splice(i,1);
+  }
+}
+
+// 更新怪物
+function updateMonsters(){
+  let hit = false;
+  for(let i=monsters.length-1;i>=0;i--){
+    let m = monsters[i];
+    m.y += 2; // 降低怪物速度
+
+    if(checkCollision(player, m)){
+      lives--; 
+      monsters.splice(i,1);
+      combo=0; // 被撞重置连击
+      if(lives<=0) gameOver=true;
+      continue;
+    }
+    if(m.y>height){
+      monsters.splice(i,1);
+      continue;
+    }
+
+    // 玩家攻击判定
+    if(attacking && player.y < m.y + m.height && m.y < player.y + player.height){
+      if(Math.abs((player.x+player.width/2)-(m.x+m.width/2)) < 50){
+        score+=10 + combo*2; // 连击加分
+        monsters.splice(i,1);
+        hit=true;
+
+        // 剑光长度随连击增加
+        swordEffects.push({x:m.x-10, y:m.y-10, width:m.width+20+combo*5, height:10, alpha:1});
+
+        // 播放音效
+        hitSound.currentTime = 0;
+        hitSound.play();
       }
     }
   }
 
-  // 绘制玩家步迹
-  pathTrail.forEach(pos => {
-    ctx.fillStyle = "rgba(0, 115, 179, 0.3)";
-    ctx.beginPath();
-    ctx.arc(pos.x*cellSize+20, pos.y*cellSize+20, 10, 0, Math.PI*2);
-    ctx.fill();
-  });
-
-  // 绘制目标点
-  ctx.fillStyle = "#ff4d4d";
-  ctx.beginPath();
-  ctx.arc(goal.x*cellSize+20, goal.y*cellSize+20, 15, 0, Math.PI*2);
-  ctx.fill();
-
-  // 绘制玩家
-  ctx.fillStyle = "#0073b3";
-  ctx.beginPath();
-  ctx.arc(player.x*cellSize+20, player.y*cellSize+20, 15, 0, Math.PI*2);
-  ctx.fill();
-}
-
-function movePlayer(dx, dy) {
-  let newX = player.x + dx;
-  let newY = player.y + dy;
-  if(newX>=0 && newY>=0 && newX<cols && newY<rows && maze[newY][newX] === 0){
-    player.x = newX;
-    player.y = newY;
-    pathTrail.push({x: player.x, y: player.y}); // 记录步迹
-    drawMaze();
-    checkWin();
+  // 连击计数
+  if(hit){
+    combo++;
+    comboTimer = 60; // 连击保持1秒
+  }else{
+    if(comboTimer>0) comboTimer--;
+    else combo=0;
   }
 }
 
-function checkWin(){
-  if(player.x === goal.x && player.y === goal.y){
-    const messageEl = document.getElementById("message");
-    messageEl.textContent = "恭喜你！小朱找到小杨啦 ❤️";
-    messageEl.style.opacity = 0;
-    setTimeout(() => messageEl.style.opacity = 1, 100);
-    animateHeart();
-    document.getElementById("next").style.display = "inline-block";
-    window.removeEventListener("keydown", keyHandler);
+// 更新玩家
+function updatePlayer(){
+  if(moveLeft) player.x -= player.speed;
+  if(moveRight) player.x += player.speed;
+  if(player.x<0) player.x=0;
+  if(player.x+player.width>width) player.x=width-player.width;
+}
+
+// 更新状态显示
+function updateStatus(){ 
+  document.getElementById('status').innerHTML=`生命:${lives} &nbsp; 分数:${score} &nbsp; 连击:${combo}`; 
+}
+
+// 主循环
+function gameLoop(){
+  if(gameOver){
+    ctx.fillStyle='rgba(0,0,0,0.7)';
+    ctx.fillRect(0,0,width,height);
+    ctx.fillStyle='#ffcc66';
+    ctx.font='28px Comic Sans MS';
+    ctx.fillText('游戏结束', width/2-70, height/2);
+    ctx.fillText(`最终分数:${score}`, width/2-80, height/2+40);
+    return;
   }
+
+  ctx.clearRect(0,0,width,height);
+
+  // 背景渐变
+  let grad = ctx.createLinearGradient(0,0,0,height);
+  grad.addColorStop(0,'#000033');
+  grad.addColorStop(1,'#000044');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,width,height);
+
+  drawPlayer();
+
+  monsterTimer++;
+  if(monsterTimer>80){ spawnMonster(); monsterTimer=0; } // 增加怪物生成间隔
+
+  updateMonsters();
+  drawMonsters();
+  updatePlayer();
+  updateSwordEffects();
+  drawSwordEffects();
+  updateStatus();
+
+  requestAnimationFrame(gameLoop);
 }
 
-// 心形闪烁动画
-function animateHeart() {
-  let heartSize = 10;
-  const interval = setInterval(() => {
-    ctx.fillStyle = "rgba(255, 77, 77, 0.6)";
-    ctx.beginPath();
-    ctx.moveTo(goal.x*cellSize+20, goal.y*cellSize+20-heartSize/2);
-    ctx.arc(goal.x*cellSize+20, goal.y*cellSize+20, heartSize, 0, Math.PI*2);
-    ctx.fill();
-    heartSize += 2;
-    if(heartSize>40) clearInterval(interval);
-  }, 100);
-}
+// 按钮控制
+document.getElementById('leftBtn').addEventListener('touchstart',()=>moveLeft=true);
+document.getElementById('leftBtn').addEventListener('touchend',()=>moveLeft=false);
+document.getElementById('rightBtn').addEventListener('touchstart',()=>moveRight=true);
+document.getElementById('rightBtn').addEventListener('touchend',()=>moveRight=false);
+document.getElementById('attackBtn').addEventListener('touchstart',()=>{attacking=true; player.attacking=true});
+document.getElementById('attackBtn').addEventListener('touchend',()=>{attacking=false; player.attacking=false});
 
-function keyHandler(e){
-  switch(e.key){
-    case "ArrowUp": movePlayer(0,-1); break;
-    case "ArrowDown": movePlayer(0,1); break;
-    case "ArrowLeft": movePlayer(-1,0); break;
-    case "ArrowRight": movePlayer(1,0); break;
-  }
-}
+// 键盘控制
+document.addEventListener('keydown', e=>{
+  if(e.key==='ArrowLeft') moveLeft=true;
+  if(e.key==='ArrowRight') moveRight=true;
+  if(e.key===' ') { attacking=true; player.attacking=true; }
+});
+document.addEventListener('keyup', e=>{
+  if(e.key==='ArrowLeft') moveLeft=false;
+  if(e.key==='ArrowRight') moveRight=false;
+  if(e.key===' ') { attacking=false; player.attacking=false; }
+});
 
-function nextLevel(){
-  alert("进入第二关啦！");
-  window.location.href = "G2.html";
-}
-
-window.addEventListener("keydown", keyHandler);
-drawMaze();
+gameLoop();
 </script>
 </body>
 </html>
+
+
