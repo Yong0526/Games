@@ -81,7 +81,7 @@ function spawnDrops(x,y){ for(let i=0;i<3+Math.floor(Math.random()*3);i++){ drop
 function checkCollision(a,b){ return !(a.x+a.width<b.x || a.x>b.x+b.width || a.y+a.height<b.y || a.y>b.y+b.height);}
 
 // 玩家小人
-function drawPlayer(){ ctx.save(); ctx.translate(player.x+player.width/2,player.y+player.height/2); ctx.fillStyle='#ff6666'; ctx.fillRect(-15,-20,30,40); ctx.beginPath(); ctx.arc(0,-30,12,0,Math.PI*2); ctx.fillStyle='#ffe0bd'; ctx.fill(); ctx.closePath(); ctx.strokeStyle='#ff6666'; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(-15,-10); ctx.lineTo(-25,10); ctx.stroke(); ctx.beginPath(); ctx.moveTo(15,-10); if(player.attacking) ctx.lineTo(35,-30); else ctx.lineTo(25,10); ctx.stroke(); ctx.fillStyle='#333'; ctx.fillRect(-10,20,10,20); ctx.fillRect(0,20,10,20); ctx.restore();}
+function drawPlayer(){ ctx.save(); ctx.translate(player.x+player.width/2,player.y+player.height/2); ctx.fillStyle='#ff6666'; ctx.fillRect(-15,-20,30,40); ctx.beginPath(); ctx.arc(0,-30,12,0,Math.PI*2); ctx.fillStyle='#ffe0bd'; ctx.fill(); ctx.closePath(); ctx.strokeStyle='#ff6666'; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(-15,-10); ctx.lineTo(-25,10); ctx.stroke(); ctx.beginPath(); ctx.moveTo(15,-10); if(player.attacking) ctx.lineTo(50,-20); else ctx.lineTo(25,10); ctx.stroke(); ctx.fillStyle='#333'; ctx.fillRect(-10,20,10,20); ctx.fillRect(0,20,10,20); ctx.restore();}
 
 // 怪物小人
 function drawMonsters(){ monsters.forEach(m=>{ ctx.save(); ctx.translate(m.x+m.width/2,m.y+m.height/2); ctx.fillStyle='#66ff66'; ctx.fillRect(-15,-20,30,40); ctx.beginPath(); ctx.arc(0,-30,12,0,Math.PI*2); ctx.fillStyle='#ccffcc'; ctx.fill(); ctx.closePath(); ctx.strokeStyle='#66ff66'; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(-15,-10); ctx.lineTo(-25,10); ctx.stroke(); ctx.beginPath(); ctx.moveTo(15,-10); ctx.lineTo(25,10); ctx.stroke(); ctx.fillStyle='#333'; ctx.fillRect(-10,20,10,20); ctx.fillRect(0,20,10,20); ctx.restore(); });}
@@ -112,7 +112,17 @@ function updateMonsters(){
     if(attacking && player.y<m.y+m.height && m.y<player.y+player.height){
       if(Math.abs((player.x+player.width/2)-(m.x+m.width/2))<50){
         score++; monsters.splice(i,1); hit=true; triggerShake(5);
-        swordEffects.push({x:m.x-10,y:m.y-10,width:m.width+20+combo*5,height:10,alpha:1,fadeSpeed:0.1+combo*0.02});
+
+        // 调整剑光尺寸，更容易击中
+        swordEffects.push({
+            x:m.x-20,
+            y:m.y-10,
+            width:m.width+40+combo*5,
+            height:25, // 高度增大
+            alpha:1,
+            fadeSpeed:0.1+combo*0.02
+        });
+
         spawnDrops(m.x+m.width/2,m.y+m.height/2);
         hitSound.currentTime=0; hitSound.play();
         if(score>=10) victory=true;
